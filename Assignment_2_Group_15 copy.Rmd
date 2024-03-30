@@ -1,0 +1,492 @@
+---
+title: |
+  | **Financial Econometrics in R/Python**
+  | Assignment Two
+author: |
+  | 
+  |
+  | Business School, Imperial College London
+  |
+  | Group 15
+  |
+  | Group Member:
+  |
+  | 02430323 Lingxi Zhou
+  | 02381195 Miaolin Gong 
+  | 02512292 MohmedMaaeez Malek
+  | 02457971 Rachel Wang
+  | 02429291 Zhaoping Ran
+  |
+  |
+date: "25-11-2023"
+geometry: margin=1.5cm
+output: pdf_document
+---
+
+```{=tex}
+\newpage
+\tableofcontents
+\listoftables
+\listoffigures
+\newpage
+```
+# Preparation
+## Required Packages
+```{r Load libraries, message=FALSE, warning=FALSE}
+#install.packages("...")
+#library("...")
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(margins) 
+library(randomForest)
+library(e1071) 
+library(MASS) 
+library(class) 
+library(tree)
+library(ggplot2)
+library(gridExtra)
+library(binom)
+library(sandwich)
+library(lmtest)
+opts_chunk$set(tidy.opts=list(width.cutoff=70),tidy=TRUE)
+```
+
+## Load Data
+```{r Load Data, message=FALSE, warning=FALSE}
+emp_data = read_excel("employment_08_09.xlsx")
+emp_data = emp_data %>% filter(!is.na(earnwke))
+```
+
+\newpage
+
+# Question (a)
+**What fraction of workers in the sample were employed in April 2009? Use your answer to compute a 95% confidence interval for the probability that a worker was employed in April 2009, conditional on being employed in April 2008.**
+```{r}
+employed2009 <- sum(emp_data$employed == 1) / nrow(emp_data)
+confidence_interval <- mean(emp_data$employed) + c(-1, 1) * qnorm(0.975) * 
+                       sd(emp_data$employed) / sqrt(length(emp_data$employed))
+confidence_interval
+```
+
+
+- Fraction of workers employed in April 2009 is 87.51% 
+- The confidence interval can be computed by sample mean \(\pm\) z-value for 95% confidence level \(\times\) the sample standard deviation divided by the square root of the sample size.
+The 95% Confidence Interval for the probability of being employed in April 2009, given employment in April 2008 is (0.8657518, 0.8845101)
+
+# Question (b)
+**Regress Employed on $Age$ and $Age^2$, using a linear probability model.**
+
+```{r}
+lpm_emp = lm(employed ~ age + I(age^2), data = emp_data)
+coeftest(lpm_emp, vcov = vcovHC(lpm_emp), type = "HC1")
+```
+
+
+## Question (b)(i)
+**Based on this regression, was the age a statistically significant determinant of employment in April 2009.**
+
+- The P-value of \(\hat{\beta}_{\text{age}}\) is 2.030e-15
+- The P-value of \(\hat{\beta}_{\text{age}^2}\) is 1.626e-14
+
+The P-values of the estimated coefficients are all smaller than 0.05, suggesting that they are both statistically significant with 95% confidence.
+
+## Question (b)(ii)
+**Is there evidence of a nonlinear effect of age on probability of being employed?**
+
+The quadratic term coefficient \(\hat{\beta}_{\text{age}^2}\) is significant, indicating a nonlinear relationship between age and employment probability. We can also see this relationship from the plot of the regression.
+
+
+```{r fig.cap="LPM Regression Plot"}
+intercept_bi = summary(lpm_emp)$coefficients["(Intercept)",1]
+coef_age_bi = summary(lpm_emp)$coefficients["age",1]
+coef_age_bi_squared = summary(lpm_emp)$coefficients["I(age^2)",1]
+age_range = seq(from = min(emp_data$age), to = max(emp_data$age), by = 1)
+prob_bi = intercept_bi + coef_age_bi * age_range + coef_age_bi_squared * age_range^2
+data_bi = data.frame(age_range, prob_bi)
+p1 <- ggplot(data_bi, aes(x = age_range, y = prob_bi)) +
+  geom_line(color = "blue") +
+  ggtitle("LPM Model Probability Prediction (age range from dataset)") +
+  xlab("Age") + ylab("Probability of Being Employed") + theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+
+age_range_ext = seq(from = 1, to = 100, by = 1)
+prob_bi_ext = intercept_bi + coef_age_bi * age_range_ext + coef_age_bi_squared * age_range_ext^2
+data_bi_ext = data.frame(age_range_ext, prob_bi_ext)
+p2 <- ggplot(data_bi_ext, aes(x = age_range_ext, y = prob_bi_ext)) +
+  geom_line(color = "blue") +
+  ggtitle("LPM Model Probability Prediction (age range from 1 - 100)") +
+  xlab("Age") + ylab("Probability of Being Employed") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+
+grid.arrange(p1, p2, nrow = 2)
+```
+
+## Question (b)(iii)
+**Compute the predicted probability of employment for a 20-year-old worker, a 40year-old worker, and a 60-year-old worker.**
+
+$$
+\hat{P(\text{Employed})}  = 0.3218 + 0.02746 \times Age - 0.0003159 \times Age^2
+$$
+
+
+```{r}
+predict_20_40_60 = data.frame(age = c(20, 40, 60))
+predicted_b_iii = predict(lpm_emp, newdata = predict_20_40_60, type = "response")
+predicted_b_iii
+```
+
+
+- \(\hat{Employed}_{\text{20}}\) = 0.74464. For a 20-year-old worker the predicted probability of employment is 74.46% 
+- \(\hat{Employed}_{\text{40}}\) = 0.91476. For a 40-year-old worker the predicted probability of employment is 91.48% 
+- \(\hat{Employed}_{\text{60}}\) = 0.83216. For a 60-year-old worker the predicted probability of employment is 83.22% 
+
+# Question (c)
+**Repeat (b) using a probit regression.**
+```{r}
+probit_emp = glm(employed ~ age + I(age^2), family = binomial(link = "probit"), emp_data)
+coeftest(probit_emp, vcov = vcovHC(probit_emp), type = "HC1")
+```
+## Question (c)(i)
+**Based on this regression, was the age a statistically significant determinant of employment in April 2009.**
+
+- The P-value of \(\hat{\beta}_{\text{age}}\) is < 2.2e-16
+- The P-value of \(\hat{\beta}_{\text{age}^2}\) is 4.748e-16
+
+The P-values of the estimated coefficients are all smaller than 0.05, suggesting that they are both statistically significant with 95% confidence.
+
+## Question (c)(ii)
+**Is there evidence of a nonlinear effect of age on probability of being employed?**
+
+The quadratic term coefficient \(\hat{\beta}_{\text{age}^2}\) is significant, indicating a nonlinear relationship between age and employment probability. We can also see this relationship from the plot of the regression.
+
+```{r fig.cap="Probit Model Probability Predictionn Plot"}
+age_range_dataset = seq(from = min(emp_data$age), to = max(emp_data$age), by = 1)
+predict_dataset = data.frame(age = age_range_dataset)
+predicted_dataset = predict(probit_emp, newdata = predict_dataset, type = "response")
+data_probit_dataset = data.frame(age_range_dataset, predicted_dataset)
+p1_probit <- ggplot(data_probit_dataset, aes(x = age_range_dataset, y = predicted_dataset)) +
+  geom_line(color = "blue") +
+  ggtitle("Probit Model Probability Prediction (age range from dataset)") +
+  xlab("Age") + ylab("Probability of Being Employed") + theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+age_range_extended = seq(from = 1, to = 100, by = 1)
+predict_extended = data.frame(age = age_range_extended)
+predicted_extended = predict(probit_emp, newdata = predict_extended, type = "response")
+data_probit_extended = data.frame(age_range_extended, predicted_extended)
+p2_probit <- ggplot(data_probit_extended, aes(x = age_range_extended, y = predicted_extended)) +
+  geom_line(color = "blue") +
+  ggtitle("Probit Model Probability Prediction (age range from 1 - 100)") +
+  xlab("Age") + ylab("Probability of Being Employed") + theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+grid.arrange(p1_probit, p2_probit, nrow = 2)
+
+```
+
+## Question (c)(iii)
+**Compute the predicted probability of employment for a 20-year-old worker, a 40year-old worker, and a 60-year-old worker.**
+
+$$
+\hat{P(\text{Employed})} = \Phi(-1.1949915 + 0.1180873 \times Age -0.0013641 \times Age^2)
+$$
+
+```{r}
+predicted_c_iii = predict(probit_emp, newdata = predict_20_40_60, type = "response")
+predicted_c_iii
+```
+
+- \(\hat{Employed}_{\text{20}}\) = 0.732735. For a 20-year-old worker the predicted probability of employment is 73.27% 
+- \(\hat{Employed}_{\text{40}}\) = 0.910834. For a 40-year-old worker the predicted probability of employment is 91.08% 
+- \(\hat{Employed}_{\text{60}}\) = 0.836312. For a 60-year-old worker the predicted probability of employment is 83.63% 
+
+# Question (d)
+**Repeat (b) using a logit regression.**
+```{r}
+logit_emp = glm(employed ~ age + I(age^2), family = binomial(link = "logit"), emp_data)
+coeftest(logit_emp, vcov = vcovHC(logit_emp), type = "HC1")
+```
+
+## Question (d)(i)
+**Based on this regression, was the age a statistically significant determinant of employment in April 2009.**
+
+- The P-value of \(\hat{\beta}_{\text{age}}\) is < 2.2e-16
+- The P-value of \(\hat{\beta}_{\text{age}^2}\) is < 2.2e-16
+
+The P-values of the estimated coefficients are all smaller than 0.05, suggesting that they are both statistically significant with 95% confidence.
+
+## Question (d)(ii)
+**Is there evidence of a nonlinear effect of age on probability of being employed?**
+
+The quadratic term coefficient \(\hat{\beta}_{\text{age}^2}\) is significant, indicating a nonlinear relationship between age and employment probability. We can also see this relationship from the plot of the regression.
+
+```{r fig.cap="Logit Model Probability Predictionn Plot"}
+age_range_dataset = seq(from = min(emp_data$age), to = max(emp_data$age), by = 1)
+predict_dataset = data.frame(age = age_range_dataset)
+predicted_dataset = predict(logit_emp, newdata = predict_dataset, type = "response")
+data_logit_dataset = data.frame(age_range_dataset, predicted_dataset)
+p1_logit <- ggplot(data_logit_dataset, aes(x = age_range_dataset, y = predicted_dataset)) +
+  geom_line(color = "blue") +
+  ggtitle("Logit Model Probability Prediction (age range from dataset)") +
+  xlab("Age") + ylab("Probability of Being Employed") + theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+age_range_extended = seq(from = 1, to = 100, by = 1)
+predict_extended = data.frame(age = age_range_extended)
+predicted_extended = predict(logit_emp, newdata = predict_extended, type = "response")
+data_logit_extended = data.frame(age_range_extended, predicted_extended)
+p2_logit <- ggplot(data_logit_extended, aes(x = age_range_extended, y = predicted_extended)) +
+  geom_line(color = "blue") +
+  ggtitle("Logit Model Probability Prediction (age range 1-100)") +
+  xlab("Age") + ylab("Probability of Being Employed") + theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5)
+grid.arrange(p1_logit, p2_logit, nrow = 2)
+```
+
+
+## Question (d)(iii)
+**Compute the predicted probability of employment for a 20-year-old worker, a 40year-old worker, and a 60-year-old worker.**
+
+$$
+\hat{P(\text{Employed})} = \frac{1}{1 + e^{-(-2.3733020 + 0.2187055 \times \text{Age} - 0.0025338 \times \text{Age}^2)}}
+$$
+
+```{r}
+predicted_d_iii = predict(logit_emp, newdata = predict_20_40_60, type = "response")
+predicted_d_iii
+```
+
+- \(\hat{Employed}_{\text{20}}\) = 0.728552. For a 20-year-old worker the predicted probability of employment is 72.85% 
+- \(\hat{Employed}_{\text{40}}\) = 0.910589. For a 40-year-old worker the predicted probability of employment is 91.06% 
+- \(\hat{Employed}_{\text{60}}\) = 0.835809. For a 60-year-old worker the predicted probability of employment is 83.58% 
+
+# Question (e)
+**Are there important differences in your answers to (b)-(d)? Explain**
+
+
+From the prediction result, probability prediction and model coefficients, we can see that all three models are different
+
+## Model differences
+- Linear Probability Model (LPM) is a multiple regression model when dealing with a dependent variable that is binary rather than continuous. LPM assumes that the relationship between the independent variables and the probability of the event occurring is linear. It estimates the coefficients using ordinary least squares (OLS) regression. 
+- Probit and Logit regression are nonlinear regression models for binary dependent variables. Since the dependent variable is binary with 0 and 1, these two regression models can pin the predicted values to be between 0 and 1. The Probit regression model uses the standard normal cumulative distribution function; on the other hand, the Logit regression model uses logit transformation in lieu of the cumulative distribution, and its coefficients are estimated by maximum likelihood.
+
+## Prediction differences
+- For the prediction results, there is no significant difference when predicting 20, 40, and 60-year-old workers. However, when predicting extreme values such as 0 and 100-year-old people, the predicted probability varies significantly. From the graph, we can see that in LPM, the predicted probability of 100-year-old workers even falls below 0, which does not make sense when predicting probability. This issue wont affect Logit and Probit as they transformed the predicted coefficient in to probability usuing logit and probability distribution, makes them perfect for predicting probability. 
+- Moreover, there is still some slight differences between logit and probit worth noting. When reaching extreme values, the predicted probability of the Logit regression drops more quickly than Probit. But overall, there is no significant difference between the Probit and Logit regression models in this context.
+
+\newpage
+# Question (f)
+**The data set includes variables measuring the workers’ educational attainment, sex, race, marital status, region of the country, and weekly earnings in April 2008.**
+
+## Question (f)(i) 
+**By adding those covariates to the linear probability model regression of point (b), investigate whether the conclusions on the effect of Age on employment from (b) are affected by omitted variable bias.**
+
+
+```{r}
+emp_data$race = as.factor(emp_data$race)
+extended_model <- lm(employed ~ age + I(age^2) + female + married + race + ne_states + so_states + ce_states + we_states + educ_lths + educ_hs + educ_somecol + educ_aa + educ_bac + educ_adv + earnwke, emp_data)
+coeftest(extended_model, vcov = vcovHC(extended_model), type = "HC1")
+```
+
+
+From the full model above, the effect of Age on employment is still significant, which is consistent with the conclusion in (b).
+
+- Age: After adding these variables, the estimate coefficient for age is 0.02487, which indicates that the probability of employment increases 0.02487 when age increases by 1. P-value (\(3.977\times10^{-12}\)) is much less than 0.05 and t (6.956) is significant. Therefore, age has significant influence on employment at 5% significance level.
+
+- \(\text{Age}^2\): After adding these variables, the estimate coefficient for age^2 is \(-2.8996\times10^{-4}\), which indicates that there is a non-linear relationship between \(\text{age}^2\) and employment. P-value (\(7.021\times10^{-12}\) < 0.05) means this effect is significant at 5% level.
+
+The conclusion from (b) which both covariates are significant remains. Although the conclusion remains, the estimated coefficient for age decreases from 0.02746 to 0.02487 and the absolute value of estimate coefficient for \(\text{age}^2\) decreases from \(3.1592\times10^{-4}\) to \(2.8996\times10^{-4}\). At the same time, P-values increase, which means the effect of age covariates on probability of employment dropped. This is because more variables which have significant relationships with employment are considered in the model.
+
+For other variables, such as ce_states, educ_lths and earnwke, with P-values 0.0011987, 0.0023018 and 0.0003895 respectively. They are all smaller than 0.05, which means that they are all significant in explaining employment. But the existence of other significant covariates does not mean the effect of Age on employment are affected by omitted variable bias since the percentages of decline in estimates of age and \(\text{age}^2\) are only 9.43% and 8.22%, which are relatively small. 
+
+## Question (f)(ii) 
+**Use the regression results to discuss the characteristics of workers who were hurt the most by the 2008 financial crisis.**
+
+In this model, most variables are categorical variables except earnings (earnwke). The baseline of the model is someone who is a white male, not married, not a member of union, not employed by a private firm or by the government, not self-employed, has advanced education degree and live in a western state.
+
+- Age and \(age^2\) coefficient:\(2.4866\times10^{-2}\) & \(-2.8996\times10^{-4}\)
+  - Since both of the coefficients are significant, there is a nonlinear relationship between employment and age. The negative sign of coefficient on squared age indicates a concave function of age. The function can reach at the maximum point when age equals to 42.88. Therefore, the workers with age that much smaller or larger than 42.88 have lower probability on employment, who would be hurt more in the financial crisis.
+
+- Female coefficient:\(-4.8493\times10^{-3}\): 
+  - Female is related to a lower probability of employment due to the negative coefficient. It means women will lose \(4.8493\times10^{-3}\) percent probability to get a job compared to men, so the female workers may face more challenge in the financial crisis. 
+ 
+- Married coefficient:\(-2.6098\times10^{-3}\): 
+  - A negative coefficient on married corresponds to a \(-2.6098\times10^{-3}\) percent reduction in the probability of employment, so the workers who is married may face more challenge in the financial crisis. 
+
+- Race coefficient:\(-3.8416\times10^{-2}\) for race2 and \(-4.7501\times10^{-3}\) for race3
+  - Compared to race1 (baseline, race = white only), the probability of employment of race2 (race = black only) decreases 0.03842% and the probability of employment of race3 (race = not white or black) decreases 0.00475%, which indicates that workers with black race would be hurt the most in the financial crisis.
+
+- States: 
+  - Compared to the western state (baseline), the coefficient on the other three areas are all positive. The probability of employment in northeastern state (ne_states) will increase 0.01676%, the probability of employment in southern state (so_states) will increase 0.02395% and the probability of employment in central state (ce_states) will increase 0.04392%, which means that workers in western state may be affected the most greatly in the financial crisis.
+
+- Education:
+  - For the highest level of education, the model choose advanced degree (educ_adv) as the baseline. Compared to advanced degree, the probability of employment for workers with less than a high school graduate level greatly will decrease 0.08236, the probability of employment for workers with high school graduate level decrease 0.02082 and the probability of employment for workers with with college level will increase \(2.4045\times10^{-4}\), the probability of employment for workers with AA degree will increase \(7.3469\times10^{-3}\) and the probability of employment for workers with BA or BS degree will decrease 0.01284. The education level seems not corresponds to the probability of employment as workers with higher degree like BA or BS degree has higher chance of unemployment probability. However, based on the coefficients, workers whose level of education is less than a high school graduate face the most challenge during the financial crisis.
+
+- earnwke coefficient:\(3.4057\times10^{-5}\)
+  - Average weekly earnings are associated with a increasing probability of employment. The higher the average weekly earning is, the higher the probability of employment is. So it seems like that workers with low weekly earnings face greater hardship during the financial crisis.
+
+In conclusion, workers with characteristics such as too young or too old, female, married, black-race, education level under highschool, lower average weekly earnings and from western states were hurt the most by the 2008 financial crisis.
+
+\newpage
+# Question (g)
+**Optional: Use the models in (b)-(d) to assess the in-sample accuracy of the classification. What is the proportion of correctly assigned classes?**
+
+## Model Prediction
+```{r}
+#LPM 
+lpm_predict_prob = predict(lpm_emp, newdata = emp_data, type = "response")
+lpm_predict_result = ifelse(lpm_predict_prob > 0.5, 1, 0)
+#Probit
+probit_predict_prob = predict(probit_emp, newdata = emp_data, type = "response")
+probit_predict_result = ifelse(probit_predict_prob > 0.5, 1, 0)
+#Logit 
+logit_predict_prob = predict(logit_emp, newdata = emp_data, type = "response")
+logit_predict_result = ifelse(logit_predict_prob > 0.5, 1, 0)
+```
+
+## Accuracy Computation
+```{r}
+lpm_accuracy = sum(lpm_predict_result == emp_data$employed) / nrow(emp_data)
+logit_accuracy = sum(probit_predict_result == emp_data$employed) / nrow(emp_data)
+probit_accuracy = sum(logit_predict_result == emp_data$employed) / nrow(emp_data)
+```
+
+
+```{r}
+accuracy_table = data.frame("Accuracy" = c(lpm_accuracy, probit_accuracy, logit_accuracy))
+rownames(accuracy_table) = c("LPM", "Probit", "Logit")
+kable(accuracy_table, booktabs = TRUE, 
+      caption = "Model Accuracy (LPM, Probit, Logit)") %>%
+    kable_styling(latex_options = c("striped", "hold_position")) %>%
+    row_spec(0, bold = TRUE) %>%
+    column_spec(1, bold = TRUE)
+```
+
+
+The in-sample prediction accuracy of LPM, Probit and Logit are the same, which is at 87.51%. This suggests that 87.51% of classes were assigned correctly.
+
+## Confusion Matrix of LPM, Logit and Probit 
+```{r}
+confusion_matrix_lpm = table(Actual = emp_data$employed, Predicted = lpm_predict_result)
+confusion_matrix_lpm
+confusion_matrix_logit  = table(Actual = emp_data$employed, Predicted = probit_predict_result)
+confusion_matrix_logit
+confusion_matrix_probit = table(Actual = emp_data$employed, Predicted = logit_predict_result)
+confusion_matrix_probit
+```
+
+
+# Question (h)
+**Optional: Repeat point (g) using one or more (at your discretion) of the following classification algorithms: Naïve Bayes Classifier, Linear Discriminant Analysis, Quadratic Discriminant Analysis, Decision trees, Random forests, K-Nearest Neighbours.**
+
+## Employment Modelling
+### Naïve Bayes Classifier
+```{r}
+nb_emp = naiveBayes(employed ~ age + I(age^2), data = emp_data)
+```
+
+### Linear Discriminant Analysis
+```{r}
+lda_emp = lda(as.factor(employed) ~ age + I(age^2), data = emp_data)
+```
+
+### Quadratic Discriminant Analysis
+```{r}
+qda_emp = qda(as.factor(employed) ~ age + I(age^2), data = emp_data)
+```
+
+### Decision trees
+```{r}
+tree_emp = tree(as.factor(employed) ~ age + I(age^2), data = emp_data)
+plot(tree_emp)
+text(tree_emp,pretty=1)
+```
+
+### Random forests
+```{r}
+set.seed(123) # Setting a seed for reproducibility
+rf_emp = randomForest(as.factor(employed) ~ age + I(age^2), data = emp_data, num.trees= 100) 
+```
+
+### K-Nearest Neighbours
+```{r}
+scaled_emp_data = scale(emp_data[, c("age")])
+k = 5
+knn_prediction = knn(train = scaled_emp_data, test = scaled_emp_data, cl = as.factor(emp_data$employed), k = k)
+```
+
+## Model Prediction
+```{r}
+tree_prediction = predict(tree_emp, newdata = emp_data, type = "class")
+rf_prediction = predict(rf_emp, data = emp_data)
+emp_data_edit = emp_data %>% mutate("I(age^2)" = age^2)
+nb_prediction = predict(nb_emp, newdata = emp_data_edit, type = "class")
+lda_prediction = predict(lda_emp, newdata = emp_data)$class
+qda_prediction = predict(qda_emp, newdata = emp_data)$class
+```
+
+## Accuracy Computation
+```{r}
+tree_accuracy   = sum(tree_prediction == emp_data$employed) / nrow(emp_data)
+rf_accuracy     <- sum(rf_prediction == emp_data$employed) / nrow(emp_data)
+nb_accuracy     <- sum(nb_prediction == emp_data$employed) / nrow(emp_data)
+lda_accuracy    <- sum(lda_prediction == emp_data$employed) / nrow(emp_data)
+qda_accuracy    <- sum(qda_prediction == emp_data$employed) / nrow(emp_data)
+knn_accuracy    <- sum(knn_prediction == emp_data$employed) / nrow(emp_data)
+```
+
+```{r}
+new_accuracy_table = data.frame("Accuracy" = c(tree_accuracy, rf_accuracy, nb_accuracy, lda_accuracy,qda_accuracy,knn_accuracy ))
+rownames(new_accuracy_table) = c("Decision Tree", "Random Forest", "Naive Bayes", "LDA", "QDA", "KNN")
+kable(new_accuracy_table, booktabs = F, 
+      caption = "Model Accuracy (additional models)") %>%
+    kable_styling(latex_options = c("striped", "hold_position")) %>%
+    row_spec(0, bold = TRUE) %>%
+    column_spec(1, bold = TRUE)
+```
+
+The accuracy for the Decision Tree, Random Forest, Naive Bayes, LDA, and KNN models is exactly the same (0.8751309). The QDA model has a slightly lower accuracy (0.8646554) compared to the others. This could indicate that the QDA might be more sensitive than others regarding responses to specific data characteristics, such as non-linearity or the presence of outliers. The uniformity in the in sample prediction accuracy is quite unusual which suggests a few possibilities:
+
+- Data Characteristics: The dataset might have characteristics that make it equally suitable for these different algorithms, or it might not be complex enough to differentiate the performance of these models.
+- Model Overfitting: In-sample accuracies being high and identical could indicate overfitting, especially if these models have been trained without sufficient regularization or cross-validation.
+
+\newpage
+## Confusion Matrix 
+
+```{r}
+confusion_matrix_tree   <- table(Actual = emp_data$employed, Predicted = tree_prediction)
+confusion_matrix_RF     <- table(Actual = emp_data$employed, Predicted = rf_prediction)
+confusion_matrix_NB     <- table(Actual = emp_data$employed, Predicted = nb_prediction)
+confusion_matrix_LDA    <- table(Actual = emp_data$employed, Predicted = lda_prediction)
+confusion_matrix_QDA    <- table(Actual = emp_data$employed, Predicted = qda_prediction)
+confusion_matrix_KNN    <- table(Actual = emp_data$employed, Predicted = knn_prediction)
+```
+
+```{r}
+combined_confusion_matrix <- rbind(
+  Decision_Tree = c(confusion_matrix_tree),
+  Random_Forest = c(confusion_matrix_RF),
+  Naive_Bayes = c(confusion_matrix_NB),
+  Linear_Discriminant_Analysis = c(confusion_matrix_LDA),
+  KNN = c(confusion_matrix_KNN),
+  Quadratic_Discriminant_Analysis = c(confusion_matrix_QDA))
+colnames(combined_confusion_matrix) <- c("Actual 0, Predicted 0", "Actual 1, Predicted 0", "Actual 0, Predicted 1", "Actual 1, Predicted 1")
+combined_confusion_matrix_df <- as.data.frame(combined_confusion_matrix)
+kable(combined_confusion_matrix_df,caption = "Combined Confusion Matrix of Additional Models", 
+      booktabs = TRUE, ) %>% column_spec(1:5, width= "2.5cm") %>% 
+  kable_styling(latex_options = c("striped", "hold_position")) %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(1, bold = TRUE)
+
+```
+
+Based on the confusion matrices for Decision Tree, Random Forest, Naive Bayes, Linear Discriminant Analysis (LDA), and KNN models, we can see that there is an identical pattern: most models completely miss true negatives (Actual 0, Predicted 0) and false positives (Actual 1, Predicted 0), indicating a potential issue in predicting the negative class. However, they are highly effective in predicting true positives (Actual 1, Predicted 1). 
+
+In contrast, the Quadratic Discriminant Analysis (QDA) model demonstrates a more balanced performance across all categories, though with less overall accuracy. This suggests that while most models are effective in identifying positive cases, they struggle with negative ones, highlighting a potential area for model improvement or reevaluation of class balance. 
